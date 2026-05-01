@@ -19,5 +19,11 @@
   "ai-patcher.journal.when": "When:",
   "ai-patcher.journal.dryRun": "Dry run:",
   "ai-patcher.settings.lastPatch.name": "Last patch",
-  "ai-patcher.settings.lastPatch.hint": "The last patch launched from the chat command."
+  "ai-patcher.settings.lastPatch.hint": "The last patch launched from the chat command.",
+  "ai-patcher.inbox.title": "AI Patcher Inbox",
+  "ai-patcher.inbox.empty": "No local bundles are available yet.",
+  "ai-patcher.inbox.dryRun": "Dry Run",
+  "ai-patcher.inbox.apply": "Apply",
+  "ai-patcher.inbox.refresh": "Refresh",
+  "ai-patcher.inbox.close": "Close"
 }

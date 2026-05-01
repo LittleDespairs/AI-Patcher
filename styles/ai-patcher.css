@@ -1,3 +1,38 @@
 .chat-message .message-content code {
   user-select: all;
 }
+
+.ai-patcher-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-patcher-bundle {
+  border: 1px solid var(--color-border-light-tertiary);
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.ai-patcher-bundle header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-patcher-bundle h3 {
+  margin: 0;
+  font-size: 1.05em;
+}
+
+.ai-patcher-bundle p {
+  margin: 6px 0 0;
+}
+
+.ai-patcher-bundle footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+}

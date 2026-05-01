@@ -19,5 +19,11 @@
   "ai-patcher.journal.when": "Когда:",
   "ai-patcher.journal.dryRun": "Пробный запуск:",
   "ai-patcher.settings.lastPatch.name": "Последний патч",
-  "ai-patcher.settings.lastPatch.hint": "Последний патч, запущенный через команду чата."
+  "ai-patcher.settings.lastPatch.hint": "Последний патч, запущенный через команду чата.",
+  "ai-patcher.inbox.title": "Входящие AI Patcher",
+  "ai-patcher.inbox.empty": "Локальных пакетов пока нет.",
+  "ai-patcher.inbox.dryRun": "Проверить",
+  "ai-patcher.inbox.apply": "Применить",
+  "ai-patcher.inbox.refresh": "Обновить",
+  "ai-patcher.inbox.close": "Закрыть"
 }

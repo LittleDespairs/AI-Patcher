@@ -1,5 +1,6 @@
 const MODULE_ID = "ai-patcher";
 const PATCH_ROOT = `modules/${MODULE_ID}/patches`;
+const INBOX_ROOT = `modules/${MODULE_ID}/inbox`;
 
 function localize(key) {
   return game.i18n.localize(`${MODULE_ID}.${key}`);
@@ -28,6 +29,14 @@ function normalizePatchName(name) {
   if (!/^[a-zA-Z0-9/_-]+(\.m?js)?$/.test(cleanName)) throw new Error(localize("errors.badName"));
 
   return cleanName.endsWith(".js") || cleanName.endsWith(".mjs") ? cleanName : `${cleanName}.js`;
+}
+
+function normalizeBundlePart(value, label = "path") {
+  const text = String(value ?? "").trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!text) throw new Error(`${label} is required.`);
+  if (text.includes("..")) throw new Error(`${label} cannot contain parent directory segments.`);
+  if (!/^[a-zA-Z0-9/_.,-]+$/.test(text)) throw new Error(`${label} contains unsupported characters.`);
+  return text;
 }
 
 function formatError(error) {
@@ -98,14 +107,51 @@ async function createOrUpdateDocument(collection, match, data, { dryRun = false 
   return collection.documentClass.create({ ...match, ...data });
 }
 
+async function loadInboxIndex() {
+  requireGM();
+
+  const response = await fetch(routeFor(`${INBOX_ROOT}/index.json?v=${Date.now()}`), { cache: "no-store" });
+  if (response.status === 404) return { bundles: [] };
+  if (!response.ok) throw new Error(`Unable to load AI Patcher inbox index: HTTP ${response.status}`);
+
+  const index = await response.json();
+  const bundles = Array.isArray(index.bundles) ? index.bundles : [];
+  return { ...index, bundles };
+}
+
+async function runBundle(id, options = {}) {
+  requireGM();
+
+  const bundleId = normalizeBundlePart(id, "Bundle id");
+  const index = await loadInboxIndex();
+  const bundle = index.bundles.find((entry) => entry.id === bundleId);
+  if (!bundle) throw new Error(`AI Patcher bundle not found: ${bundleId}`);
+
+  const entry = normalizeBundlePart(bundle.entry ?? "patch.js", "Bundle entry");
+  if (!entry.endsWith(".js") && !entry.endsWith(".mjs")) throw new Error("Bundle entry must be a JavaScript module.");
+
+  return runPatchModule(`${INBOX_ROOT}/${bundleId}/${entry}`, {
+    ...options,
+    patchName: bundle.title || bundleId,
+    bundle
+  });
+}
+
 async function runPatch(name, options = {}) {
   requireGM();
 
   const patchName = normalizePatchName(name);
+  return runPatchModule(`${PATCH_ROOT}/${patchName}`, { ...options, patchName });
+}
+
+async function runPatchModule(modulePath, options = {}) {
+  requireGM();
+
+  const patchName = String(options.patchName ?? modulePath);
   const dryRun = Boolean(options.dryRun);
   const notify = options.notify !== false;
   const journal = options.journal !== false;
-  const url = routeFor(`${PATCH_ROOT}/${patchName}?v=${Date.now()}`);
+  const url = routeFor(`${modulePath}?v=${Date.now()}`);
   const messages = [];
 
   const log = (...parts) => {
@@ -124,6 +170,7 @@ async function runPatch(name, options = {}) {
     result = await patch({
       dryRun,
       log,
+      bundle: options.bundle,
       game,
       canvas,
       ui,
@@ -167,6 +214,7 @@ function parseParameters(parameters) {
 async function showHelp() {
   const content = `<p><strong>AI Patcher</strong></p>
 <ul>
+  <li><code>/aip inbox</code> - open the local bundle inbox</li>
   <li><code>/aip run patch-name</code> - run <code>patches/patch-name.js</code></li>
   <li><code>/aip run patch-name --dry-run</code> - load the patch without writing changes</li>
   <li><code>await game.aiPatcher.runPatch("patch-name")</code> - console or macro API</li>
@@ -179,9 +227,96 @@ async function showHelp() {
   });
 }
 
+function bundleListContent(index) {
+  const bundles = index.bundles ?? [];
+  if (!bundles.length) {
+    return `<div class="ai-patcher-inbox">
+      <p>${localize("inbox.empty")}</p>
+      <p><code>Data/modules/ai-patcher/inbox/index.json</code></p>
+    </div>`;
+  }
+
+  const rows = bundles.map((bundle) => {
+    const id = escapeHTML(bundle.id);
+    const title = escapeHTML(bundle.title || bundle.id);
+    const description = escapeHTML(bundle.description || "");
+    const createdAt = escapeHTML(bundle.createdAt || "");
+    return `<article class="ai-patcher-bundle" data-bundle-id="${id}">
+      <header>
+        <h3>${title}</h3>
+        ${createdAt ? `<span>${createdAt}</span>` : ""}
+      </header>
+      ${description ? `<p>${description}</p>` : ""}
+      <footer>
+        <button type="button" data-action="dry-run" data-bundle-id="${id}">
+          <i class="fas fa-vial"></i> ${localize("inbox.dryRun")}
+        </button>
+        <button type="button" data-action="apply" data-bundle-id="${id}">
+          <i class="fas fa-check"></i> ${localize("inbox.apply")}
+        </button>
+      </footer>
+    </article>`;
+  }).join("");
+
+  return `<div class="ai-patcher-inbox">${rows}</div>`;
+}
+
+async function openInbox() {
+  requireGM();
+
+  let index;
+  try {
+    index = await loadInboxIndex();
+  } catch (error) {
+    ui.notifications.error(formatError(error));
+    throw error;
+  }
+
+  const dialog = new Dialog({
+    title: localize("inbox.title"),
+    content: bundleListContent(index),
+    buttons: {
+      refresh: {
+        icon: '<i class="fas fa-rotate"></i>',
+        label: localize("inbox.refresh"),
+        callback: () => openInbox()
+      },
+      close: {
+        icon: '<i class="fas fa-times"></i>',
+        label: localize("inbox.close")
+      }
+    },
+    render: (html) => {
+      html.find("button[data-action]").on("click", async (event) => {
+        const button = event.currentTarget;
+        const bundleId = button.dataset.bundleId;
+        const dryRun = button.dataset.action === "dry-run";
+        button.disabled = true;
+
+        try {
+          await runBundle(bundleId, { dryRun });
+          if (!dryRun) dialog.close();
+        } catch (error) {
+          console.error(`${MODULE_ID} | ${formatError(error)}`);
+        } finally {
+          button.disabled = false;
+        }
+      });
+    }
+  });
+
+  dialog.render(true);
+  return dialog;
+}
+
 function handleParsedCommand(parsed) {
   if (!game.user?.isGM) {
     ui.notifications.warn(localize("errors.gmOnly"));
+    return;
+  }
+
+  if (parsed.command === "inbox" || parsed.command === "open") {
+    openInbox();
     return;
   }
 
@@ -234,6 +369,9 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   game.aiPatcher = {
+    openInbox,
+    loadInboxIndex,
+    runBundle,
     runPatch,
     normalizePatchName,
     createOrUpdateDocument
@@ -246,6 +384,43 @@ Hooks.once("ready", () => {
 
 Hooks.on("chatCommandsReady", () => {
   registerChatCommand();
+});
+
+Hooks.on("getSceneControlButtons", (controls) => {
+  if (!game.user?.isGM) return;
+
+  const tool = {
+    name: "ai-patcher-inbox",
+    title: localize("inbox.title"),
+    icon: "fas fa-wand-magic-sparkles",
+    button: true,
+    visible: true,
+    order: 10,
+    onClick: openInbox,
+    onChange: openInbox
+  };
+
+  if (Array.isArray(controls)) {
+    controls.push({
+      name: "ai-patcher",
+      title: "AI Patcher",
+      icon: "fas fa-wand-magic-sparkles",
+      tools: [tool],
+      activeTool: "ai-patcher-inbox"
+    });
+    return;
+  }
+
+  controls["ai-patcher"] = {
+    name: "ai-patcher",
+    title: "AI Patcher",
+    icon: "fas fa-wand-magic-sparkles",
+    order: 1000,
+    tools: {
+      inbox: tool
+    },
+    activeTool: "inbox"
+  };
 });
 
 Hooks.on("chatMessage", (_chatLog, messageText) => {

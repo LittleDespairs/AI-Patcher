@@ -20,7 +20,7 @@ jobs:
       - name: Build module zip
         run: |
           mkdir -p dist
-          zip -r dist/ai-patcher.zip module.json README.md lang patches scripts styles
+          zip -r dist/ai-patcher.zip module.json README.md inbox lang patches scripts styles
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
