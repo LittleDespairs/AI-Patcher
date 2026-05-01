@@ -1,0 +1,3 @@
+.chat-message .message-content code {
+  user-select: all;
+}

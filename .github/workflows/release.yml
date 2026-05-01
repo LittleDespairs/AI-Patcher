@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate module manifest
+        run: python -m json.tool module.json > /dev/null
+
+      - name: Build module zip
+        run: |
+          mkdir -p dist
+          zip -r dist/ai-patcher.zip module.json README.md lang patches scripts styles
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ai-patcher.zip

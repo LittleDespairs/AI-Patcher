@@ -1,0 +1,37 @@
+{
+  "id": "ai-patcher",
+  "title": "AI Patcher",
+  "description": "GM-only helper module for applying small scripted Foundry world patches created outside Foundry.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "Local Codex"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13.351"
+  },
+  "esmodules": [
+    "scripts/ai-patcher.js"
+  ],
+  "styles": [
+    "styles/ai-patcher.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    },
+    {
+      "lang": "ru",
+      "name": "Русский",
+      "path": "lang/ru.json"
+    }
+  ],
+  "packs": [],
+  "url": "https://github.com/LittleDespairs/AI-Patcher",
+  "manifest": "https://raw.githubusercontent.com/LittleDespairs/AI-Patcher/main/module.json",
+  "download": "https://github.com/LittleDespairs/AI-Patcher/releases/latest/download/ai-patcher.zip"
+}

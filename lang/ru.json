@@ -1,0 +1,23 @@
+{
+  "ai-patcher.yes": "да",
+  "ai-patcher.no": "нет",
+  "ai-patcher.errors.gmOnly": "Патчи AI Patcher для мира может запускать только GM.",
+  "ai-patcher.errors.patchRequired": "Нужно указать имя патча.",
+  "ai-patcher.errors.badPath": "Путь патча не может содержать переход в родительский каталог.",
+  "ai-patcher.errors.badName": "Имя патча может содержать только буквы, цифры, слэш, подчёркивание и дефис.",
+  "ai-patcher.errors.noEntrypoint": "Модуль патча должен экспортировать default-функцию, функцию apply или функцию patch.",
+  "ai-patcher.errors.unknownCommand": "Неизвестная команда AI Patcher.",
+  "ai-patcher.notifications.done": "Патч {patchName} выполнен.",
+  "ai-patcher.notifications.failed": "Патч {patchName} завершился с ошибкой. Подробности в консоли или журнале.",
+  "ai-patcher.journal.folder": "Журнал патчей AI",
+  "ai-patcher.journal.completed": "Выполнено",
+  "ai-patcher.journal.failed": "Ошибка",
+  "ai-patcher.journal.error": "Ошибка",
+  "ai-patcher.journal.result": "Результат",
+  "ai-patcher.journal.page": "Запуск",
+  "ai-patcher.journal.patch": "Патч:",
+  "ai-patcher.journal.when": "Когда:",
+  "ai-patcher.journal.dryRun": "Пробный запуск:",
+  "ai-patcher.settings.lastPatch.name": "Последний патч",
+  "ai-patcher.settings.lastPatch.hint": "Последний патч, запущенный через команду чата."
+}

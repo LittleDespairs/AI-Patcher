@@ -1,0 +1,23 @@
+{
+  "ai-patcher.yes": "yes",
+  "ai-patcher.no": "no",
+  "ai-patcher.errors.gmOnly": "Only a GM can run AI Patcher world patches.",
+  "ai-patcher.errors.patchRequired": "Patch name is required.",
+  "ai-patcher.errors.badPath": "Patch paths cannot contain parent directory segments.",
+  "ai-patcher.errors.badName": "Patch names may only contain letters, numbers, slash, underscore, and dash.",
+  "ai-patcher.errors.noEntrypoint": "Patch module must export a default function, apply function, or patch function.",
+  "ai-patcher.errors.unknownCommand": "Unknown AI Patcher command.",
+  "ai-patcher.notifications.done": "Patch {patchName} completed.",
+  "ai-patcher.notifications.failed": "Patch {patchName} failed. See console or journal.",
+  "ai-patcher.journal.folder": "AI Patch Log",
+  "ai-patcher.journal.completed": "Completed",
+  "ai-patcher.journal.failed": "Failed",
+  "ai-patcher.journal.error": "Error",
+  "ai-patcher.journal.result": "Result",
+  "ai-patcher.journal.page": "Run",
+  "ai-patcher.journal.patch": "Patch:",
+  "ai-patcher.journal.when": "When:",
+  "ai-patcher.journal.dryRun": "Dry run:",
+  "ai-patcher.settings.lastPatch.name": "Last patch",
+  "ai-patcher.settings.lastPatch.hint": "The last patch launched from the chat command."
+}
