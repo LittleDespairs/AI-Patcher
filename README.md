@@ -13,8 +13,9 @@ https://raw.githubusercontent.com/LittleDespairs/AI-Patcher/main/module.json
 ## Workflow
 
 1. Enable `AI Patcher` in a world.
-2. Put a patch file in your Foundry user data folder under `Data/modules/ai-patcher/patches`.
-3. As a GM, run it from chat:
+2. Enable its dependency `Chat Commander` / `_chatcommands` if Foundry does not enable it automatically.
+3. Put a patch file in your Foundry user data folder under `Data/modules/ai-patcher/patches`.
+4. As a GM, run it from chat:
 
 ```text
 /aip run patch-file-name

@@ -156,6 +156,14 @@ function parseCommand(messageText) {
   return { command, patchName, dryRun };
 }
 
+function parseParameters(parameters) {
+  const parts = parameters.trim().split(/\s+/).filter(Boolean);
+  const command = parts[0] ?? "help";
+  const patchName = parts[1];
+  const dryRun = parts.includes("--dry-run") || parts.includes("-n");
+  return { command, patchName, dryRun };
+}
+
 async function showHelp() {
   const content = `<p><strong>AI Patcher</strong></p>
 <ul>
@@ -169,6 +177,48 @@ async function showHelp() {
     content,
     whisper: [game.user.id]
   });
+}
+
+function handleParsedCommand(parsed) {
+  if (!game.user?.isGM) {
+    ui.notifications.warn(localize("errors.gmOnly"));
+    return;
+  }
+
+  if (parsed.command === "help" || !parsed.patchName) {
+    showHelp();
+    return;
+  }
+
+  if (parsed.command !== "run") {
+    ui.notifications.warn(localize("errors.unknownCommand"));
+    showHelp();
+    return;
+  }
+
+  runPatch(parsed.patchName, { dryRun: parsed.dryRun })
+    .then(() => game.settings.set(MODULE_ID, "lastPatch", parsed.patchName))
+    .catch((error) => console.error(`${MODULE_ID} | ${formatError(error)}`));
+}
+
+function registerChatCommand() {
+  if (!game.chatCommands) return false;
+  if (game.chatCommands.commands?.has("/aip")) return true;
+
+  game.chatCommands.register({
+    name: "/aip",
+    aliases: ["/ai-patch", "/cwp", "/codex-patch"],
+    module: MODULE_ID,
+    requiredRole: "GAMEMASTER",
+    icon: "<i class='fas fa-wand-magic-sparkles'></i>",
+    description: "Run AI Patcher world patches.",
+    callback: (_chat, parameters) => {
+      handleParsedCommand(parseParameters(parameters));
+      return {};
+    }
+  });
+
+  return true;
 }
 
 Hooks.once("init", () => {
@@ -190,32 +240,18 @@ Hooks.once("ready", () => {
   };
   game.codexWorldPatcher = game.aiPatcher;
 
+  registerChatCommand();
   console.log(`${MODULE_ID} | Ready. Use /aip run patch-name or game.aiPatcher.runPatch("patch-name").`);
+});
+
+Hooks.on("chatCommandsReady", () => {
+  registerChatCommand();
 });
 
 Hooks.on("chatMessage", (_chatLog, messageText) => {
   const parsed = parseCommand(messageText);
   if (!parsed) return true;
 
-  if (!game.user?.isGM) {
-    ui.notifications.warn(localize("errors.gmOnly"));
-    return false;
-  }
-
-  if (parsed.command === "help" || !parsed.patchName) {
-    showHelp();
-    return false;
-  }
-
-  if (parsed.command !== "run") {
-    ui.notifications.warn(localize("errors.unknownCommand"));
-    showHelp();
-    return false;
-  }
-
-  runPatch(parsed.patchName, { dryRun: parsed.dryRun })
-    .then(() => game.settings.set(MODULE_ID, "lastPatch", parsed.patchName))
-    .catch((error) => console.error(`${MODULE_ID} | ${formatError(error)}`));
-
+  handleParsedCommand(parsed);
   return false;
 });
