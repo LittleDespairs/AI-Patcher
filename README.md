@@ -14,14 +14,22 @@ https://raw.githubusercontent.com/LittleDespairs/AI-Patcher/main/module.json
 
 1. Enable `AI Patcher` in a world.
 2. Enable its dependency `Chat Commander` / `_chatcommands` if Foundry does not enable it automatically.
-3. Ask an AI assistant or another tool to create a portable `.aipack.json` package, or place a local bundle in `Data/modules/ai-patcher/inbox`.
+3. Ask an AI assistant or another tool to publish a package to your AI Patcher catalog, create a portable `.aipack.json` package, or place a local bundle in `Data/modules/ai-patcher/inbox`.
 4. In Foundry, click the `AI Patcher` scene-controls button, or run `/aip inbox`.
-5. For a portable package, choose the `.aipack.json` file and click `Import Package`.
-6. Click `Dry Run`, then `Apply`.
+5. For a catalog package, click `Import and Apply`.
+6. For a portable file, expand `Import from file`, choose the `.aipack.json` file, then click `Dry Run` or `Apply`.
 
 Generated content does not need to be published to this repository. The repository only ships the module code that can import and run generated packages.
 
 Portable imports are stored in the current world. Package assets are uploaded into that world's data folder through Foundry's normal file picker API, so the package can be imported on hosted Foundry instances such as Sqyre without copying files into the module repository.
+
+By default, the module reads this remote catalog:
+
+```text
+https://raw.githubusercontent.com/LittleDespairs/AI-Patcher-Catalog/main/index.json
+```
+
+The catalog can point to generated packages stored outside this module repository. You can change the catalog URL in the module settings.
 
 The older direct patch workflow still works. Put a patch file in your Foundry user data folder under `Data/modules/ai-patcher/patches`, then run:
 

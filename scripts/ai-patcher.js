@@ -2,6 +2,7 @@ const MODULE_ID = "ai-patcher";
 const PATCH_ROOT = `modules/${MODULE_ID}/patches`;
 const INBOX_ROOT = `modules/${MODULE_ID}/inbox`;
 const AIPACK_SCHEMA = "ai-patcher.aipack.v1";
+const DEFAULT_FEED_URL = "https://raw.githubusercontent.com/LittleDespairs/AI-Patcher-Catalog/main/index.json";
 
 function localize(key) {
   return game.i18n.localize(`${MODULE_ID}.${key}`);
@@ -127,12 +128,41 @@ async function loadInboxIndex() {
   }
 
   const importedBundles = Object.values(game.settings.get(MODULE_ID, "importedBundles") ?? {});
+  const remoteBundles = await loadRemoteBundles();
   return {
     bundles: [
       ...localBundles.map((bundle) => ({ ...bundle, source: bundle.source ?? "local" })),
-      ...importedBundles.map((bundle) => ({ ...bundle, source: "imported" }))
+      ...importedBundles.map((bundle) => ({ ...bundle, source: "imported" })),
+      ...remoteBundles.filter((remoteBundle) => {
+        return !importedBundles.some((importedBundle) => importedBundle.id === remoteBundle.id);
+      })
     ]
   };
+}
+
+async function loadRemoteBundles() {
+  const feedUrl = String(game.settings.get(MODULE_ID, "feedUrl") || "").trim();
+  if (!feedUrl) return [];
+
+  try {
+    const response = await fetch(`${feedUrl}${feedUrl.includes("?") ? "&" : "?"}v=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const feed = await response.json();
+    const bundles = Array.isArray(feed.bundles) ? feed.bundles : [];
+    return bundles.map((bundle) => ({
+      id: normalizeBundleId(bundle.id),
+      title: String(bundle.title || bundle.id),
+      description: String(bundle.description || ""),
+      createdAt: String(bundle.createdAt || ""),
+      packageUrl: String(bundle.packageUrl || ""),
+      source: "remote"
+    })).filter((bundle) => bundle.packageUrl);
+  } catch (error) {
+    ui.notifications.warn(localize("notifications.feedFailed"));
+    console.warn(`${MODULE_ID} | Unable to load remote feed`, error);
+    return [];
+  }
 }
 
 async function runBundle(id, options = {}) {
@@ -142,6 +172,15 @@ async function runBundle(id, options = {}) {
   const index = await loadInboxIndex();
   const bundle = index.bundles.find((entry) => entry.id === bundleId);
   if (!bundle) throw new Error(`AI Patcher bundle not found: ${bundleId}`);
+
+  if (bundle.source === "remote") {
+    const importedBundle = await importAipackUrl(bundle.packageUrl);
+    return runPatchSource(importedBundle.patchSource, {
+      ...options,
+      patchName: importedBundle.title || bundleId,
+      bundle: importedBundle
+    });
+  }
 
   if (bundle.source === "imported") {
     return runPatchSource(bundle.patchSource, {
@@ -341,6 +380,21 @@ async function importAipackFile(file) {
   requireGM();
 
   const raw = await file.text();
+  return importAipackData(raw);
+}
+
+async function importAipackUrl(url) {
+  requireGM();
+
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Unable to download AI Patcher package: HTTP ${response.status}`);
+
+  return importAipackData(await response.json());
+}
+
+async function importAipackData(raw) {
+  requireGM();
+
   const packageData = validateAipack(raw);
   let assetMap = {};
   try {
@@ -401,14 +455,15 @@ async function showHelp() {
 
 function bundleListContent(index) {
   const bundles = index.bundles ?? [];
+  const hasBundles = bundles.length > 0;
   const importControl = `<div class="ai-patcher-import">
     <input type="file" accept=".json,.aipack,.aipack.json,application/json,text/json" data-action="select-aipack">
     <button type="button" data-action="import-aipack">
-      <i class="fas fa-file-import"></i> ${localize("inbox.import")}
+      <i class="fas fa-file-import"></i> ${localize(hasBundles ? "inbox.importFile" : "inbox.import")}
     </button>
   </div>`;
 
-  if (!bundles.length) {
+  if (!hasBundles) {
     return `<div class="ai-patcher-inbox">
       ${importControl}
       <p>${localize("inbox.empty")}</p>
@@ -422,6 +477,7 @@ function bundleListContent(index) {
     const description = escapeHTML(bundle.description || "");
     const createdAt = escapeHTML(bundle.createdAt || "");
     const source = escapeHTML(localize(`inbox.source.${bundle.source ?? "local"}`));
+    const applyLabel = bundle.source === "remote" ? localize("inbox.importApply") : localize("inbox.apply");
     return `<article class="ai-patcher-bundle" data-bundle-id="${id}">
       <header>
         <h3>${title}</h3>
@@ -433,15 +489,18 @@ function bundleListContent(index) {
           <i class="fas fa-vial"></i> ${localize("inbox.dryRun")}
         </button>
         <button type="button" data-action="apply" data-bundle-id="${id}">
-          <i class="fas fa-check"></i> ${localize("inbox.apply")}
+          <i class="fas fa-check"></i> ${applyLabel}
         </button>
       </footer>
     </article>`;
   }).join("");
 
   return `<div class="ai-patcher-inbox">
-    ${importControl}
     ${rows}
+    <details class="ai-patcher-manual-import">
+      <summary>${localize("inbox.manualImport")}</summary>
+      ${importControl}
+    </details>
   </div>`;
 }
 
@@ -589,6 +648,15 @@ Hooks.once("init", () => {
     type: Object,
     default: {}
   });
+
+  game.settings.register(MODULE_ID, "feedUrl", {
+    name: `${MODULE_ID}.settings.feedUrl.name`,
+    hint: `${MODULE_ID}.settings.feedUrl.hint`,
+    scope: "world",
+    config: true,
+    type: String,
+    default: DEFAULT_FEED_URL
+  });
 });
 
 Hooks.once("ready", () => {
@@ -596,6 +664,7 @@ Hooks.once("ready", () => {
     openInbox,
     loadInboxIndex,
     importAipackFile,
+    importAipackUrl,
     runBundle,
     runPatch,
     normalizePatchName,
