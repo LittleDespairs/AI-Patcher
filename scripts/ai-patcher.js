@@ -402,7 +402,7 @@ async function showHelp() {
 function bundleListContent(index) {
   const bundles = index.bundles ?? [];
   const importControl = `<div class="ai-patcher-import">
-    <input type="file" accept=".aipack.json,application/json" data-action="select-aipack">
+    <input type="file" accept=".json,.aipack,.aipack.json,application/json,text/json" data-action="select-aipack">
     <button type="button" data-action="import-aipack">
       <i class="fas fa-file-import"></i> ${localize("inbox.import")}
     </button>
