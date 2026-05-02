@@ -2,7 +2,7 @@
   "id": "ai-patcher",
   "title": "AI Patcher",
   "description": "GM-only helper module for applying small scripted Foundry world patches created outside Foundry.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "authors": [
     {
       "name": "Local Codex"

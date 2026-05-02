@@ -401,14 +401,16 @@ async function showHelp() {
 
 function bundleListContent(index) {
   const bundles = index.bundles ?? [];
+  const importControl = `<div class="ai-patcher-import">
+    <input type="file" accept=".aipack.json,application/json" data-action="select-aipack">
+    <button type="button" data-action="import-aipack">
+      <i class="fas fa-file-import"></i> ${localize("inbox.import")}
+    </button>
+  </div>`;
+
   if (!bundles.length) {
     return `<div class="ai-patcher-inbox">
-      <div class="ai-patcher-import">
-        <input type="file" accept=".aipack.json,application/json" data-action="select-aipack">
-        <button type="button" data-action="import-aipack">
-          <i class="fas fa-file-import"></i> ${localize("inbox.import")}
-        </button>
-      </div>
+      ${importControl}
       <p>${localize("inbox.empty")}</p>
       <p><code>Data/modules/ai-patcher/inbox/index.json</code></p>
     </div>`;
@@ -438,12 +440,7 @@ function bundleListContent(index) {
   }).join("");
 
   return `<div class="ai-patcher-inbox">
-    <div class="ai-patcher-import">
-      <input type="file" accept=".aipack.json,application/json" data-action="select-aipack">
-      <button type="button" data-action="import-aipack">
-        <i class="fas fa-file-import"></i> ${localize("inbox.import")}
-      </button>
-    </div>
+    ${importControl}
     ${rows}
   </div>`;
 }
@@ -474,15 +471,13 @@ async function openInbox() {
       }
     },
     render: (html) => {
-      html.find("button[data-action='import-aipack']").on("click", async (event) => {
-        const input = html.find("input[data-action='select-aipack']")[0];
+      const importSelectedFile = async (input, button) => {
         const file = input?.files?.[0];
         if (!file) {
-          ui.notifications.warn(localize("errors.noPackageSelected"));
+          input?.click();
           return;
         }
 
-        const button = event.currentTarget;
         button.disabled = true;
         try {
           await importAipackFile(file);
@@ -493,7 +488,18 @@ async function openInbox() {
           console.error(`${MODULE_ID} | ${formatError(error)}`);
         } finally {
           button.disabled = false;
+          if (input) input.value = "";
         }
+      };
+
+      html.find("button[data-action='import-aipack']").on("click", async (event) => {
+        const input = html.find("input[data-action='select-aipack']")[0];
+        await importSelectedFile(input, event.currentTarget);
+      });
+
+      html.find("input[data-action='select-aipack']").on("change", async (event) => {
+        const button = html.find("button[data-action='import-aipack']")[0];
+        await importSelectedFile(event.currentTarget, button);
       });
 
       html.find("button[data-action='dry-run'], button[data-action='apply']").on("click", async (event) => {
