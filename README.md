@@ -1,6 +1,6 @@
 # AI Patcher
 
-Local Foundry VTT module for applying small scripted world patches prepared outside Foundry.
+Foundry VTT module for applying small scripted world patches prepared outside Foundry.
 
 ## Installation
 
@@ -14,11 +14,14 @@ https://raw.githubusercontent.com/LittleDespairs/AI-Patcher/main/module.json
 
 1. Enable `AI Patcher` in a world.
 2. Enable its dependency `Chat Commander` / `_chatcommands` if Foundry does not enable it automatically.
-3. Ask an AI assistant or another tool to place a local bundle in `Data/modules/ai-patcher/inbox`.
+3. Ask an AI assistant or another tool to create a portable `.aipack.json` package, or place a local bundle in `Data/modules/ai-patcher/inbox`.
 4. In Foundry, click the `AI Patcher` scene-controls button, or run `/aip inbox`.
-5. Click `Dry Run`, then `Apply`.
+5. For a portable package, choose the `.aipack.json` file and click `Import Package`.
+6. Click `Dry Run`, then `Apply`.
 
-The local bundle files are not published to this repository. The repository only ships the module code that can read and run them.
+Generated content does not need to be published to this repository. The repository only ships the module code that can import and run generated packages.
+
+Portable imports are stored in the current world. Package assets are uploaded into that world's data folder through Foundry's normal file picker API, so the package can be imported on hosted Foundry instances such as Sqyre without copying files into the module repository.
 
 The older direct patch workflow still works. Put a patch file in your Foundry user data folder under `Data/modules/ai-patcher/patches`, then run:
 
@@ -33,6 +36,32 @@ Use `--dry-run` first when the patch supports it:
 ```
 
 Every run writes a journal entry to `AI Patch Log`.
+
+## Portable Package Format
+
+Create a file ending in `.aipack.json`:
+
+```json
+{
+  "schema": "ai-patcher.aipack.v1",
+  "bundle": {
+    "id": "example-work",
+    "title": "Example Work",
+    "description": "Creates a test journal entry.",
+    "createdAt": "2026-05-01T18:00:00Z"
+  },
+  "patch": "export default async function patch({ dryRun }) { return { ok: true, dryRun }; }",
+  "assets": [
+    {
+      "path": "assets/example.png",
+      "mimeType": "image/png",
+      "data": "BASE64_WITHOUT_DATA_URL_PREFIX"
+    }
+  ]
+}
+```
+
+When imported, the patch receives the normal patch context plus its bundle metadata. Uploaded asset paths are available at `bundle.assets["assets/example.png"]`.
 
 ## Local Inbox Format
 

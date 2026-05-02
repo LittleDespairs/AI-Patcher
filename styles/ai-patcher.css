@@ -8,6 +8,20 @@
   gap: 8px;
 }
 
+.ai-patcher-import {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.ai-patcher-import input {
+  flex: 1;
+  min-width: 0;
+}
+
 .ai-patcher-bundle {
   border: 1px solid var(--color-border-light-tertiary);
   border-radius: 4px;

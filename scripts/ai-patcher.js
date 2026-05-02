@@ -1,6 +1,7 @@
 const MODULE_ID = "ai-patcher";
 const PATCH_ROOT = `modules/${MODULE_ID}/patches`;
 const INBOX_ROOT = `modules/${MODULE_ID}/inbox`;
+const AIPACK_SCHEMA = "ai-patcher.aipack.v1";
 
 function localize(key) {
   return game.i18n.localize(`${MODULE_ID}.${key}`);
@@ -37,6 +38,12 @@ function normalizeBundlePart(value, label = "path") {
   if (text.includes("..")) throw new Error(`${label} cannot contain parent directory segments.`);
   if (!/^[a-zA-Z0-9/_.,-]+$/.test(text)) throw new Error(`${label} contains unsupported characters.`);
   return text;
+}
+
+function normalizeBundleId(value) {
+  const id = normalizeBundlePart(value, "Bundle id");
+  if (id.includes("/")) throw new Error("Bundle id cannot contain slashes.");
+  return id;
 }
 
 function formatError(error) {
@@ -110,22 +117,39 @@ async function createOrUpdateDocument(collection, match, data, { dryRun = false 
 async function loadInboxIndex() {
   requireGM();
 
+  let localBundles = [];
   const response = await fetch(routeFor(`${INBOX_ROOT}/index.json?v=${Date.now()}`), { cache: "no-store" });
-  if (response.status === 404) return { bundles: [] };
-  if (!response.ok) throw new Error(`Unable to load AI Patcher inbox index: HTTP ${response.status}`);
+  if (response.status !== 404) {
+    if (!response.ok) throw new Error(`Unable to load AI Patcher inbox index: HTTP ${response.status}`);
 
-  const index = await response.json();
-  const bundles = Array.isArray(index.bundles) ? index.bundles : [];
-  return { ...index, bundles };
+    const index = await response.json();
+    localBundles = Array.isArray(index.bundles) ? index.bundles : [];
+  }
+
+  const importedBundles = Object.values(game.settings.get(MODULE_ID, "importedBundles") ?? {});
+  return {
+    bundles: [
+      ...localBundles.map((bundle) => ({ ...bundle, source: bundle.source ?? "local" })),
+      ...importedBundles.map((bundle) => ({ ...bundle, source: "imported" }))
+    ]
+  };
 }
 
 async function runBundle(id, options = {}) {
   requireGM();
 
-  const bundleId = normalizeBundlePart(id, "Bundle id");
+  const bundleId = normalizeBundleId(id);
   const index = await loadInboxIndex();
   const bundle = index.bundles.find((entry) => entry.id === bundleId);
   if (!bundle) throw new Error(`AI Patcher bundle not found: ${bundleId}`);
+
+  if (bundle.source === "imported") {
+    return runPatchSource(bundle.patchSource, {
+      ...options,
+      patchName: bundle.title || bundleId,
+      bundle
+    });
+  }
 
   const entry = normalizeBundlePart(bundle.entry ?? "patch.js", "Bundle entry");
   if (!entry.endsWith(".js") && !entry.endsWith(".mjs")) throw new Error("Bundle entry must be a JavaScript module.");
@@ -193,6 +217,154 @@ async function runPatchModule(modulePath, options = {}) {
   }
 }
 
+async function runPatchSource(source, options = {}) {
+  requireGM();
+
+  if (!source || typeof source !== "string") throw new Error("Imported bundle has no JavaScript patch source.");
+
+  const patchName = String(options.patchName ?? "imported bundle");
+  const dryRun = Boolean(options.dryRun);
+  const notify = options.notify !== false;
+  const journal = options.journal !== false;
+  const messages = [];
+  let objectUrl;
+
+  const log = (...parts) => {
+    const message = parts.map((part) => (typeof part === "string" ? part : JSON.stringify(part))).join(" ");
+    messages.push(message);
+    console.log(`${MODULE_ID} | ${message}`);
+  };
+
+  try {
+    log(`Loading imported bundle ${patchName}`);
+    objectUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    const imported = await import(objectUrl);
+    const patch = imported.default ?? imported.apply ?? imported.patch;
+    if (typeof patch !== "function") throw new Error(localize("errors.noEntrypoint"));
+
+    const result = await patch({
+      dryRun,
+      log,
+      bundle: options.bundle,
+      game,
+      canvas,
+      ui,
+      foundry,
+      CONST,
+      createOrUpdateDocument: (collection, match, data) =>
+        createOrUpdateDocument(collection, match, data, { dryRun })
+    });
+
+    const payload = { ok: true, patchName, dryRun, result, messages };
+    if (journal) await postRunSummary(payload);
+    if (notify) ui.notifications.info(game.i18n.format(`${MODULE_ID}.notifications.done`, { patchName }));
+    return payload;
+  } catch (error) {
+    const payload = { ok: false, patchName, dryRun, error, messages };
+    console.error(`${MODULE_ID} | Imported patch failed`, error);
+    if (journal) await postRunSummary(payload);
+    if (notify) ui.notifications.error(game.i18n.format(`${MODULE_ID}.notifications.failed`, { patchName }));
+    throw error;
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function decodeBase64(data) {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+async function ensureDataDirectory(path) {
+  const parts = path.split("/").filter(Boolean);
+  let current = "";
+
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    try {
+      await FilePicker.createDirectory("data", current, {});
+    } catch (error) {
+      const message = String(error?.message ?? error);
+      if (!message.toLowerCase().includes("exist")) throw error;
+    }
+  }
+}
+
+async function uploadAipackAssets(bundleId, assets = []) {
+  const assetMap = {};
+  if (!Array.isArray(assets) || !assets.length) return assetMap;
+
+  const root = `worlds/${game.world.id}/${MODULE_ID}/${bundleId}`;
+  await ensureDataDirectory(root);
+
+  for (const asset of assets) {
+    const assetPath = normalizeBundlePart(asset.path, "Asset path");
+    const segments = assetPath.split("/");
+    const fileName = segments.pop();
+    const directory = segments.length ? `${root}/${segments.join("/")}` : root;
+    if (directory !== root) await ensureDataDirectory(directory);
+
+    const bytes = decodeBase64(asset.data ?? "");
+    const file = new File([bytes], fileName, { type: asset.mimeType || "application/octet-stream" });
+    await FilePicker.upload("data", directory, file, { notify: false });
+    assetMap[assetPath] = `${directory}/${fileName}`;
+  }
+
+  return assetMap;
+}
+
+function validateAipack(raw) {
+  const packageData = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (packageData.schema !== AIPACK_SCHEMA) throw new Error(localize("errors.badPackage"));
+
+  const bundle = packageData.bundle ?? {};
+  const id = normalizeBundleId(bundle.id);
+  const patchSource = String(packageData.patch ?? "");
+  if (!patchSource.trim()) throw new Error(localize("errors.emptyPackagePatch"));
+
+  return {
+    bundle: {
+      id,
+      title: String(bundle.title || id),
+      description: String(bundle.description || ""),
+      createdAt: String(bundle.createdAt || new Date().toISOString()),
+      entry: "patch.js"
+    },
+    patchSource,
+    assets: Array.isArray(packageData.assets) ? packageData.assets : []
+  };
+}
+
+async function importAipackFile(file) {
+  requireGM();
+
+  const raw = await file.text();
+  const packageData = validateAipack(raw);
+  let assetMap = {};
+  try {
+    assetMap = await uploadAipackAssets(packageData.bundle.id, packageData.assets);
+  } catch (error) {
+    ui.notifications.warn(localize("notifications.assetsSkipped"));
+    console.warn(`${MODULE_ID} | Unable to upload package assets`, error);
+  }
+  const importedBundles = foundry.utils.deepClone(game.settings.get(MODULE_ID, "importedBundles") ?? {});
+
+  importedBundles[packageData.bundle.id] = {
+    ...packageData.bundle,
+    source: "imported",
+    importedAt: new Date().toISOString(),
+    patchSource: packageData.patchSource,
+    assets: assetMap,
+    assetBase: `worlds/${game.world.id}/${MODULE_ID}/${packageData.bundle.id}`
+  };
+
+  await game.settings.set(MODULE_ID, "importedBundles", importedBundles);
+  ui.notifications.info(game.i18n.format(`${MODULE_ID}.notifications.imported`, { title: packageData.bundle.title }));
+  return importedBundles[packageData.bundle.id];
+}
+
 function parseCommand(messageText) {
   const parts = messageText.trim().split(/\s+/);
   if (parts[0] !== "/aip" && parts[0] !== "/ai-patch" && parts[0] !== "/cwp" && parts[0] !== "/codex-patch") return null;
@@ -214,7 +386,7 @@ function parseParameters(parameters) {
 async function showHelp() {
   const content = `<p><strong>AI Patcher</strong></p>
 <ul>
-  <li><code>/aip inbox</code> - open the local bundle inbox</li>
+  <li><code>/aip inbox</code> - open the bundle inbox and import portable .aipack.json packages</li>
   <li><code>/aip run patch-name</code> - run <code>patches/patch-name.js</code></li>
   <li><code>/aip run patch-name --dry-run</code> - load the patch without writing changes</li>
   <li><code>await game.aiPatcher.runPatch("patch-name")</code> - console or macro API</li>
@@ -231,6 +403,12 @@ function bundleListContent(index) {
   const bundles = index.bundles ?? [];
   if (!bundles.length) {
     return `<div class="ai-patcher-inbox">
+      <div class="ai-patcher-import">
+        <input type="file" accept=".aipack.json,application/json" data-action="select-aipack">
+        <button type="button" data-action="import-aipack">
+          <i class="fas fa-file-import"></i> ${localize("inbox.import")}
+        </button>
+      </div>
       <p>${localize("inbox.empty")}</p>
       <p><code>Data/modules/ai-patcher/inbox/index.json</code></p>
     </div>`;
@@ -241,10 +419,11 @@ function bundleListContent(index) {
     const title = escapeHTML(bundle.title || bundle.id);
     const description = escapeHTML(bundle.description || "");
     const createdAt = escapeHTML(bundle.createdAt || "");
+    const source = escapeHTML(localize(`inbox.source.${bundle.source ?? "local"}`));
     return `<article class="ai-patcher-bundle" data-bundle-id="${id}">
       <header>
         <h3>${title}</h3>
-        ${createdAt ? `<span>${createdAt}</span>` : ""}
+        <span>${source}${createdAt ? ` · ${createdAt}` : ""}</span>
       </header>
       ${description ? `<p>${description}</p>` : ""}
       <footer>
@@ -258,7 +437,15 @@ function bundleListContent(index) {
     </article>`;
   }).join("");
 
-  return `<div class="ai-patcher-inbox">${rows}</div>`;
+  return `<div class="ai-patcher-inbox">
+    <div class="ai-patcher-import">
+      <input type="file" accept=".aipack.json,application/json" data-action="select-aipack">
+      <button type="button" data-action="import-aipack">
+        <i class="fas fa-file-import"></i> ${localize("inbox.import")}
+      </button>
+    </div>
+    ${rows}
+  </div>`;
 }
 
 async function openInbox() {
@@ -287,7 +474,29 @@ async function openInbox() {
       }
     },
     render: (html) => {
-      html.find("button[data-action]").on("click", async (event) => {
+      html.find("button[data-action='import-aipack']").on("click", async (event) => {
+        const input = html.find("input[data-action='select-aipack']")[0];
+        const file = input?.files?.[0];
+        if (!file) {
+          ui.notifications.warn(localize("errors.noPackageSelected"));
+          return;
+        }
+
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          await importAipackFile(file);
+          dialog.close();
+          openInbox();
+        } catch (error) {
+          ui.notifications.error(formatError(error));
+          console.error(`${MODULE_ID} | ${formatError(error)}`);
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      html.find("button[data-action='dry-run'], button[data-action='apply']").on("click", async (event) => {
         const button = event.currentTarget;
         const bundleId = button.dataset.bundleId;
         const dryRun = button.dataset.action === "dry-run";
@@ -365,12 +574,22 @@ Hooks.once("init", () => {
     type: String,
     default: ""
   });
+
+  game.settings.register(MODULE_ID, "importedBundles", {
+    name: `${MODULE_ID}.settings.importedBundles.name`,
+    hint: `${MODULE_ID}.settings.importedBundles.hint`,
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {}
+  });
 });
 
 Hooks.once("ready", () => {
   game.aiPatcher = {
     openInbox,
     loadInboxIndex,
+    importAipackFile,
     runBundle,
     runPatch,
     normalizePatchName,

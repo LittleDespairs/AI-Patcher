@@ -2,6 +2,7 @@
 Thumbs.db
 *.log
 *.zip
+*.aipack.json
 node_modules/
 inbox/index.json
 inbox/*/
