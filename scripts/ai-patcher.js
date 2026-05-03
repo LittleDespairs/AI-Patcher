@@ -3,6 +3,12 @@ const PATCH_ROOT = `modules/${MODULE_ID}/patches`;
 const INBOX_ROOT = `modules/${MODULE_ID}/inbox`;
 const AIPACK_SCHEMA = "ai-patcher.aipack.v1";
 const DEFAULT_FEED_URL = "https://raw.githubusercontent.com/LittleDespairs/AI-Patcher-Catalog/main/index.json";
+let lastFeedStatus = {
+  ok: false,
+  url: DEFAULT_FEED_URL,
+  count: 0,
+  error: ""
+};
 
 function localize(key) {
   return game.i18n.localize(`${MODULE_ID}.${key}`);
@@ -130,6 +136,7 @@ async function loadInboxIndex() {
   const importedBundles = Object.values(game.settings.get(MODULE_ID, "importedBundles") ?? {});
   const remoteBundles = await loadRemoteBundles();
   return {
+    feed: foundry.utils.deepClone(lastFeedStatus),
     bundles: [
       ...localBundles.map((bundle) => ({ ...bundle, source: bundle.source ?? "local" })),
       ...importedBundles.map((bundle) => ({ ...bundle, source: "imported" })),
@@ -141,8 +148,9 @@ async function loadInboxIndex() {
 }
 
 async function loadRemoteBundles() {
-  const feedUrl = String(game.settings.get(MODULE_ID, "feedUrl") || "").trim();
-  if (!feedUrl) return [];
+  const configuredUrl = String(game.settings.get(MODULE_ID, "feedUrl") || "").trim();
+  const feedUrl = configuredUrl || DEFAULT_FEED_URL;
+  lastFeedStatus = { ok: false, url: feedUrl, count: 0, error: "" };
 
   try {
     const response = await fetch(`${feedUrl}${feedUrl.includes("?") ? "&" : "?"}v=${Date.now()}`, { cache: "no-store" });
@@ -150,7 +158,7 @@ async function loadRemoteBundles() {
 
     const feed = await response.json();
     const bundles = Array.isArray(feed.bundles) ? feed.bundles : [];
-    return bundles.map((bundle) => ({
+    const remoteBundles = bundles.map((bundle) => ({
       id: normalizeBundleId(bundle.id),
       title: String(bundle.title || bundle.id),
       description: String(bundle.description || ""),
@@ -158,7 +166,10 @@ async function loadRemoteBundles() {
       packageUrl: String(bundle.packageUrl || ""),
       source: "remote"
     })).filter((bundle) => bundle.packageUrl);
+    lastFeedStatus = { ok: true, url: feedUrl, count: remoteBundles.length, error: "" };
+    return remoteBundles;
   } catch (error) {
+    lastFeedStatus = { ok: false, url: feedUrl, count: 0, error: formatError(error) };
     ui.notifications.warn(localize("notifications.feedFailed"));
     console.warn(`${MODULE_ID} | Unable to load remote feed`, error);
     return [];
@@ -437,10 +448,35 @@ function parseParameters(parameters) {
   return { command, patchName, dryRun };
 }
 
+async function showCatalogStatus() {
+  const index = await loadInboxIndex();
+  const feed = index.feed ?? lastFeedStatus;
+  const remote = index.bundles.filter((bundle) => bundle.source === "remote");
+  const imported = index.bundles.filter((bundle) => bundle.source === "imported");
+  const local = index.bundles.filter((bundle) => bundle.source === "local");
+
+  const content = `<p><strong>AI Patcher Catalog</strong></p>
+<ul>
+  <li><strong>${localize("catalog.status")}:</strong> ${feed.ok ? localize("catalog.ok") : localize("catalog.failed")}</li>
+  <li><strong>${localize("catalog.url")}:</strong> <code>${escapeHTML(feed.url)}</code></li>
+  <li><strong>${localize("catalog.remote")}:</strong> ${remote.length}</li>
+  <li><strong>${localize("catalog.imported")}:</strong> ${imported.length}</li>
+  <li><strong>${localize("catalog.local")}:</strong> ${local.length}</li>
+  ${feed.error ? `<li><strong>${localize("catalog.error")}:</strong> <pre>${escapeHTML(feed.error)}</pre></li>` : ""}
+</ul>`;
+
+  return ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "AI Patcher" }),
+    content,
+    whisper: [game.user.id]
+  });
+}
+
 async function showHelp() {
   const content = `<p><strong>AI Patcher</strong></p>
 <ul>
   <li><code>/aip inbox</code> - open the bundle inbox and import portable .aipack.json packages</li>
+  <li><code>/aip catalog</code> - show remote catalog diagnostics</li>
   <li><code>/aip run patch-name</code> - run <code>patches/patch-name.js</code></li>
   <li><code>/aip run patch-name --dry-run</code> - load the patch without writing changes</li>
   <li><code>await game.aiPatcher.runPatch("patch-name")</code> - console or macro API</li>
@@ -455,6 +491,7 @@ async function showHelp() {
 
 function bundleListContent(index) {
   const bundles = index.bundles ?? [];
+  const feed = index.feed ?? lastFeedStatus;
   const hasBundles = bundles.length > 0;
   const importControl = `<div class="ai-patcher-import">
     <input type="file" accept=".json,.aipack,.aipack.json,application/json,text/json" data-action="select-aipack">
@@ -465,6 +502,11 @@ function bundleListContent(index) {
 
   if (!hasBundles) {
     return `<div class="ai-patcher-inbox">
+      <div class="ai-patcher-feed-status ${feed.ok ? "is-ok" : "is-error"}">
+        <strong>${localize("catalog.status")}:</strong> ${feed.ok ? localize("catalog.ok") : localize("catalog.failed")}
+        <span>${escapeHTML(feed.url)}</span>
+        ${feed.error ? `<pre>${escapeHTML(feed.error)}</pre>` : ""}
+      </div>
       ${importControl}
       <p>${localize("inbox.empty")}</p>
       <p><code>Data/modules/ai-patcher/inbox/index.json</code></p>
@@ -496,6 +538,11 @@ function bundleListContent(index) {
   }).join("");
 
   return `<div class="ai-patcher-inbox">
+    <div class="ai-patcher-feed-status ${feed.ok ? "is-ok" : "is-error"}">
+      <strong>${localize("catalog.status")}:</strong> ${feed.ok ? game.i18n.format(`${MODULE_ID}.catalog.okCount`, { count: feed.count }) : localize("catalog.failed")}
+      <span>${escapeHTML(feed.url)}</span>
+      ${feed.error ? `<pre>${escapeHTML(feed.error)}</pre>` : ""}
+    </div>
     ${rows}
     <details class="ai-patcher-manual-import">
       <summary>${localize("inbox.manualImport")}</summary>
@@ -591,6 +638,11 @@ function handleParsedCommand(parsed) {
 
   if (parsed.command === "inbox" || parsed.command === "open") {
     openInbox();
+    return;
+  }
+
+  if (parsed.command === "catalog" || parsed.command === "status") {
+    showCatalogStatus().catch((error) => console.error(`${MODULE_ID} | ${formatError(error)}`));
     return;
   }
 

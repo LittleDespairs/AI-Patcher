@@ -16,6 +16,37 @@
   width: 100%;
 }
 
+.ai-patcher-feed-status {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid var(--color-border-light-tertiary);
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.ai-patcher-feed-status.is-ok {
+  border-color: rgba(40, 130, 70, 0.7);
+}
+
+.ai-patcher-feed-status.is-error {
+  border-color: rgba(160, 40, 40, 0.8);
+}
+
+.ai-patcher-feed-status span {
+  user-select: all;
+  overflow-wrap: anywhere;
+  font-family: var(--font-monospace);
+  font-size: 0.9em;
+}
+
+.ai-patcher-feed-status pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .ai-patcher-manual-import {
   margin-top: 4px;
 }
