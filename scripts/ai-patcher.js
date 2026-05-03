@@ -2,6 +2,7 @@ const MODULE_ID = "ai-patcher";
 const PATCH_ROOT = `modules/${MODULE_ID}/patches`;
 const INBOX_ROOT = `modules/${MODULE_ID}/inbox`;
 const AIPACK_SCHEMA = "ai-patcher.aipack.v1";
+const PACKAGE_SCHEMA = "ai-patcher.package.v1";
 const DEFAULT_FEED_URL = "https://raw.githubusercontent.com/LittleDespairs/AI-Patcher-Catalog/main/index.json";
 let lastFeedStatus = {
   ok: false,
@@ -386,9 +387,13 @@ async function uploadAipackAssets(bundleId, assets = []) {
 
 function validateAipack(raw) {
   const packageData = typeof raw === "string" ? JSON.parse(raw) : raw;
-  if (packageData.schema !== AIPACK_SCHEMA) throw new Error(localize("errors.badPackage"));
+  if (packageData.schema !== AIPACK_SCHEMA && packageData.schema !== PACKAGE_SCHEMA) {
+    throw new Error(localize("errors.badPackage"));
+  }
 
-  const bundle = packageData.bundle ?? {};
+  const bundle = packageData.schema === PACKAGE_SCHEMA
+    ? packageData
+    : packageData.bundle ?? {};
   const id = normalizeBundleId(bundle.id);
   const patchSource = String(packageData.patch ?? "");
   if (!patchSource.trim()) throw new Error(localize("errors.emptyPackagePatch"));
