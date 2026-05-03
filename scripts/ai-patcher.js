@@ -149,31 +149,50 @@ async function loadInboxIndex() {
 
 async function loadRemoteBundles() {
   const configuredUrl = String(game.settings.get(MODULE_ID, "feedUrl") || "").trim();
-  const feedUrl = configuredUrl || DEFAULT_FEED_URL;
-  lastFeedStatus = { ok: false, url: feedUrl, count: 0, error: "" };
+  const feedUrls = [configuredUrl || DEFAULT_FEED_URL];
+  if (feedUrls[0] !== DEFAULT_FEED_URL) feedUrls.push(DEFAULT_FEED_URL);
 
-  try {
-    const response = await fetch(`${feedUrl}${feedUrl.includes("?") ? "&" : "?"}v=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const merged = new Map();
+  const statuses = [];
 
-    const feed = await response.json();
-    const bundles = Array.isArray(feed.bundles) ? feed.bundles : [];
-    const remoteBundles = bundles.map((bundle) => ({
-      id: normalizeBundleId(bundle.id),
-      title: String(bundle.title || bundle.id),
-      description: String(bundle.description || ""),
-      createdAt: String(bundle.createdAt || ""),
-      packageUrl: String(bundle.packageUrl || ""),
-      source: "remote"
-    })).filter((bundle) => bundle.packageUrl);
-    lastFeedStatus = { ok: true, url: feedUrl, count: remoteBundles.length, error: "" };
-    return remoteBundles;
-  } catch (error) {
-    lastFeedStatus = { ok: false, url: feedUrl, count: 0, error: formatError(error) };
-    ui.notifications.warn(localize("notifications.feedFailed"));
-    console.warn(`${MODULE_ID} | Unable to load remote feed`, error);
-    return [];
+  for (const feedUrl of feedUrls) {
+    try {
+      const response = await fetch(`${feedUrl}${feedUrl.includes("?") ? "&" : "?"}v=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const feed = await response.json();
+      const bundles = Array.isArray(feed.bundles) ? feed.bundles : [];
+      const remoteBundles = bundles.map((bundle) => ({
+        id: normalizeBundleId(bundle.id),
+        title: String(bundle.title || bundle.id),
+        description: String(bundle.description || ""),
+        createdAt: String(bundle.createdAt || ""),
+        packageUrl: String(bundle.packageUrl || ""),
+        source: "remote"
+      })).filter((bundle) => bundle.packageUrl);
+
+      for (const bundle of remoteBundles) {
+        if (!merged.has(bundle.id)) merged.set(bundle.id, bundle);
+      }
+      statuses.push({ ok: true, url: feedUrl, count: remoteBundles.length, error: "" });
+    } catch (error) {
+      statuses.push({ ok: false, url: feedUrl, count: 0, error: formatError(error) });
+      console.warn(`${MODULE_ID} | Unable to load remote feed`, feedUrl, error);
+    }
   }
+
+  const failures = statuses.filter((status) => !status.ok);
+  const successes = statuses.filter((status) => status.ok);
+  if (!successes.length && failures.length) ui.notifications.warn(localize("notifications.feedFailed"));
+
+  lastFeedStatus = {
+    ok: successes.length > 0,
+    url: feedUrls.join(" + "),
+    count: merged.size,
+    error: failures.map((failure) => `${failure.url}: ${failure.error}`).join("\n")
+  };
+
+  return Array.from(merged.values());
 }
 
 async function runBundle(id, options = {}) {
