@@ -140,9 +140,11 @@ async function loadInboxIndex() {
     feed: foundry.utils.deepClone(lastFeedStatus),
     bundles: [
       ...localBundles.map((bundle) => ({ ...bundle, source: bundle.source ?? "local" })),
-      ...importedBundles.map((bundle) => ({ ...bundle, source: "imported" })),
-      ...remoteBundles.filter((remoteBundle) => {
-        return !importedBundles.some((importedBundle) => importedBundle.id === remoteBundle.id);
+      ...remoteBundles,
+      ...importedBundles.filter((importedBundle) => {
+        return !remoteBundles.some((remoteBundle) => remoteBundle.id === importedBundle.id);
+      }).map((bundle) => {
+        return { ...bundle, source: "imported" };
       })
     ]
   };
