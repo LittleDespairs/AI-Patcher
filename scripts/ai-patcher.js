@@ -362,24 +362,51 @@ async function ensureDataDirectory(path) {
   }
 }
 
+function assetExternalFallback(asset) {
+  const url = String(asset?.url || "").trim();
+  if (/^https?:\/\//i.test(url)) return url;
+
+  const data = String(asset?.data || "").trim();
+  if (!data) return "";
+  return `data:${asset?.mimeType || "application/octet-stream"};base64,${data}`;
+}
+
 async function uploadAipackAssets(bundleId, assets = []) {
   const assetMap = {};
   if (!Array.isArray(assets) || !assets.length) return assetMap;
 
   const root = `worlds/${game.world.id}/${MODULE_ID}/${bundleId}`;
-  await ensureDataDirectory(root);
+  let canUpload = true;
+  try {
+    await ensureDataDirectory(root);
+  } catch (error) {
+    canUpload = false;
+    console.warn(`${MODULE_ID} | Unable to create package asset directory; using external asset fallbacks`, error);
+  }
 
   for (const asset of assets) {
     const assetPath = normalizeBundlePart(asset.path, "Asset path");
+    const fallback = assetExternalFallback(asset);
+    if (!canUpload) {
+      if (fallback) assetMap[assetPath] = fallback;
+      continue;
+    }
+
     const segments = assetPath.split("/");
     const fileName = segments.pop();
     const directory = segments.length ? `${root}/${segments.join("/")}` : root;
-    if (directory !== root) await ensureDataDirectory(directory);
 
-    const bytes = decodeBase64(asset.data ?? "");
-    const file = new File([bytes], fileName, { type: asset.mimeType || "application/octet-stream" });
-    await FilePicker.upload("data", directory, file, { notify: false });
-    assetMap[assetPath] = `${directory}/${fileName}`;
+    try {
+      if (directory !== root) await ensureDataDirectory(directory);
+      const bytes = decodeBase64(asset.data ?? "");
+      const file = new File([bytes], fileName, { type: asset.mimeType || "application/octet-stream" });
+      await FilePicker.upload("data", directory, file, { notify: false });
+      assetMap[assetPath] = `${directory}/${fileName}`;
+    } catch (error) {
+      if (!fallback) throw error;
+      console.warn(`${MODULE_ID} | Unable to upload package asset; using fallback`, assetPath, error);
+      assetMap[assetPath] = fallback;
+    }
   }
 
   return assetMap;
